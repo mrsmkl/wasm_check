@@ -1,0 +1,8 @@
+[package]
+name = "wasm_check"
+version = "0.1.0"
+authors = ["Sami Mäkelä <mrsmkl@gmail.com>"]
+
+[dependencies]
+parity-wasm = "0.27"
+
