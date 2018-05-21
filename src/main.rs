@@ -13,6 +13,99 @@ fn convert_init(inc : u32, expr : &elements::InitExpr) -> elements::InitExpr {
     elements::InitExpr::new(vec)
 }
 
+fn simple_init(inc : u32) -> elements::InitExpr {
+    use parity_wasm::elements::Opcode::*;
+    elements::InitExpr::new([I32Const(inc as i32)].to_vec())
+}
+
+fn int_binary(i : u32) -> Vec<u8> {
+    let b1 = i as u8;
+    let b2 = (i >> 8) as u8;
+    let b3 = (i >> 16) as u8;
+    let b4 = (i >> 24) as u8;
+    [b1, b2, b3, b4].to_vec()
+}
+
+fn count_func_imports(b : &elements::Module) -> u32 {
+    if let Some(s) = b.import_section() {
+        let mut k = 0;
+        for im in s.entries().iter() {
+            if let &elements::External::Function(_x) = im.external() { k = k + 1 }
+        };
+        k
+    }
+    else { 0 }
+}
+
+fn remap_export<F>(e : &elements::ExportEntry, f_remap : &F) -> elements::ExportEntry
+where F: Fn (u32) -> u32 {
+    match e.internal() {
+       &elements::Internal::Function(t) => elements::ExportEntry::new(e.field().clone().to_string(), elements::Internal::Function(f_remap(t))),
+       _ => e.clone()
+    }
+}
+
+fn remap_opcode<F, F2>(e : &elements::Opcode, f_remap : &F, ft_remap : &F2) -> elements::Opcode
+where F: Fn (u32) -> u32
+    , F2: Fn (u32) -> u32 {
+    use parity_wasm::elements::Opcode::*;
+    match e {
+        &Call(v) => Call(f_remap(v)),
+        &CallIndirect(v, h) => CallIndirect(ft_remap(v), h),
+        a => a.clone()
+    }
+}
+
+fn remap_body<F, F2>(e : &elements::FuncBody, f_remap : &F, ft_remap : &F2) -> elements::FuncBody
+where F: Fn (u32) -> u32, F2: Fn (u32) -> u32 {
+    let ops = e.code().elements().iter().map(|a| remap_opcode(a, f_remap, ft_remap)).collect();
+    elements::FuncBody::new(e.locals().to_vec().clone(), elements::Opcodes::new(ops))
+}
+
+fn merge(a : &elements::Module, b : &elements::Module, offset : u32) -> elements::Module {
+    let builder = builder::module().with_module(a.clone());
+    let builder = if let Some(gs) = b.global_section() {
+       gs.entries().iter().fold(builder, |builder, g| { builder.with_global(g.clone()) })
+    }
+    else { builder };
+    let builder = if let Some(gs) = b.type_section() {
+       gs.types().iter().fold(builder, |builder, g| { builder.with_type(g.clone()) })
+    }
+    else { builder };
+    // shift these signatures
+    let a_ft_len = if let Some(ts) = a.type_section() {
+       ts.types().len() as u32
+    }
+    else { 0 };
+    let builder = if let Some(gs) = b.function_section() {
+       gs.entries().iter().fold(builder, |builder, g| { builder.with_func_sig(elements::Func::new(g.type_ref() + a_ft_len)) })
+    }
+    else { builder };
+    let builder = if let Some(gs) = b.data_section() {
+       gs.entries().iter().fold(builder, |builder, g| { builder.with_data(g.clone()) })
+    }
+    else { builder };
+    let builder = builder.with_data(elements::DataSegment::new(0, simple_init(256*4), int_binary(offset)));
+    
+    let a_num_funcs = if let Some(s) = b.code_section() {
+       s.bodies().len() as u32
+    }
+    else { 0 };
+    let a_func_len = count_func_imports(a) + a_num_funcs;
+
+    let builder = if let Some(gs) = b.export_section() {
+       gs.entries().iter().fold(builder, |builder, g| { builder.with_export(remap_export(g, &|x| { a_func_len + x } )) })
+    }
+    else { builder };
+
+    let builder = if let Some(gs) = b.code_section() {
+       gs.bodies().iter().fold(builder, |builder, g| { builder.with_func_body(remap_body(g, &|x| { a_func_len + x } , &|x| { a_ft_len + x } )) })
+    }
+    else { builder };
+
+    builder.build()
+}
+
 fn convert_op(inc : u32, expr : &elements::Opcode) -> elements::Opcode {
     use parity_wasm::elements::Opcode::*;
     match expr {
@@ -46,7 +139,7 @@ fn convert_op(inc : u32, expr : &elements::Opcode) -> elements::Opcode {
 }
 
 // 
-fn main() {
+fn main_offset() {
     let inc : u32 = 1024;
     let mut module = parity_wasm::deserialize_file("input.wasm").unwrap();
     assert!(module.code_section().is_some());
@@ -79,9 +172,12 @@ fn main() {
     parity_wasm::serialize_to_file("output.wasm", module).expect("Module serialization to succeed");
 }
 
-fn main2() {
+fn main() {
     let inc : u32 = 1024;
     let mut module = parity_wasm::deserialize_file("input.wasm").unwrap();
+    let module2 = parity_wasm::deserialize_file("input.wasm").unwrap();
+    merge(&module, &module2, 123);
+    main_offset();
     assert!(module.code_section().is_some());
     {
         let code_section = module.code_section().unwrap(); // Part of the module with functions code
