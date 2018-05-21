@@ -46,8 +46,7 @@ where F: Fn (u32) -> u32 {
 }
 
 fn remap_opcode<F, F2>(e : &elements::Opcode, f_remap : &F, ft_remap : &F2) -> elements::Opcode
-where F: Fn (u32) -> u32
-    , F2: Fn (u32) -> u32 {
+where F: Fn (u32) -> u32, F2: Fn (u32) -> u32 {
     use parity_wasm::elements::Opcode::*;
     match e {
         &Call(v) => Call(f_remap(v)),
@@ -103,6 +102,81 @@ fn merge(a : &elements::Module, b : &elements::Module, offset : u32) -> elements
     }
     else { builder };
 
+    builder.build()
+}
+
+fn convert_type(vt : &elements::ValueType) -> elements::ValueType {
+    use elements::ValueType::*;
+    match vt {
+        &I32 => I32,
+        &F32 => I32,
+        &I64 => I64,
+        &F64 => I64
+    }
+}
+
+// function type
+fn convert_ftype(ft : &elements::FunctionType) -> elements::FunctionType {
+    let ret =
+       if let Some(t) = ft.return_type() { Some(convert_type(&t)) }
+       else { None };
+    let params = ft.params().iter().map(&|a| convert_type(a)).collect();
+    elements::FunctionType::new(params, ret)
+}
+
+fn convert_block_type(ft : &elements::BlockType) -> elements::BlockType {
+    use elements::BlockType::*;
+    match ft {
+        &Value(ref t) => Value(convert_type(t)),
+        &NoResult => NoResult
+    }
+}
+
+// opcode
+fn convert_opcode(op : &elements::Opcode) -> elements::Opcode {
+    use elements::Opcode::*;
+    match op {
+        &Block(ref bt) => Block(convert_block_type(bt)),
+   	    &Loop(ref bt) => Loop(convert_block_type(bt)),
+	    &If(ref bt) => If(convert_block_type(bt)),
+        a => a.clone()
+    }
+}
+
+fn convert_local(l : &elements::Local) -> elements::Local {
+    elements::Local::new(l.count(), convert_type(&l.value_type()))
+}
+
+// function body
+// !!! probably will need to work more on initializing floating point values
+fn convert_body(bd : &elements::FuncBody) -> elements::FuncBody {
+    elements::FuncBody::new(bd.locals().iter().map(|l| convert_local(l)).collect(), elements::Opcodes::new(bd.code().elements().iter().map(|a| convert_opcode(a)).collect()))
+}
+
+fn test_clear(a : &elements::Section) -> bool {
+    match a {
+        &elements::Section::Code(_) => false,
+        &elements::Section::Type(_) => false,
+        _ => true
+    }
+}
+
+fn clear_module(a : &elements::Module) -> elements::Module {
+    elements::Module::new(a.sections().iter().filter(|a| test_clear(a)).map(|a| a.clone()).collect())
+}
+
+// all together
+fn convert_module_types(a : &elements::Module) -> elements::Module {
+    use elements::Type::*;
+    let builder = builder::module().with_module(clear_module(a));
+    let builder = if let Some(gs) = a.type_section() {
+       gs.types().iter().fold(builder, |builder, &Function(ref g)| { builder.with_type(Function(convert_ftype(g))) })
+    }
+    else { builder };
+    let builder = if let Some(gs) = a.code_section() {
+       gs.bodies().iter().fold(builder, |builder, g| { builder.with_func_body(convert_body(g)) })
+    }
+    else { builder };
     builder.build()
 }
 
@@ -176,7 +250,7 @@ fn main() {
     let inc : u32 = 1024;
     let mut module = parity_wasm::deserialize_file("input.wasm").unwrap();
     let module2 = parity_wasm::deserialize_file("input.wasm").unwrap();
-    merge(&module, &module2, 123);
+    convert_module_types(&merge(&module, &module2, 123));
     main_offset();
     assert!(module.code_section().is_some());
     {
