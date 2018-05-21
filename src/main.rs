@@ -124,6 +124,10 @@ fn convert_ftype(ft : &elements::FunctionType) -> elements::FunctionType {
     elements::FunctionType::new(params, ret)
 }
 
+fn convert_gtype(ft : &elements::GlobalType) -> elements::GlobalType {
+    elements::GlobalType::new(convert_type(&ft.content_type()), ft.is_mutable())
+}
+
 fn convert_block_type(ft : &elements::BlockType) -> elements::BlockType {
     use elements::BlockType::*;
     match ft {
@@ -212,6 +216,46 @@ fn convert_op(inc : u32, expr : &elements::Opcode) -> elements::Opcode {
     }
 }
 
+fn find_function(m : &elements::Module, str : &str) -> u32 {
+   m.export_section().unwrap().entries().iter().map(|a| match a.internal() {
+      &elements::Internal::Function(v) => if a.field() == str { Some(v) }  else { None },
+      _ => None
+   }).find(|a| if let &Some(_) = a {true} else {false}).unwrap().unwrap().clone()
+}
+
+fn fpu_emu_opcode(m : &elements::Module, a : &elements::Opcode) -> elements::Opcode {
+    use parity_wasm::elements::Opcode::*;
+    match a {
+    	&F32Load(flag, offset) => I32Load(flag, offset),
+    	&F64Load(flag, offset) => I64Load(flag, offset),
+    	&F32Store(flag, offset) => I32Store(flag, offset),
+    	&F64Store(flag, offset) => I64Store(flag, offset),
+        
+        &F32Add => Call(find_function(m, "f32_add")),
+        
+        a => a.clone()
+    }
+}
+
+fn fpu_emu_body(m : &elements::Module, bd : &elements::FuncBody) -> elements::FuncBody {
+    elements::FuncBody::new(bd.locals().to_vec(), elements::Opcodes::new(bd.code().elements().iter().map(|a| fpu_emu_opcode(m, a)).collect()))
+}
+
+fn fpu_emu_global(m : &elements::Module, a : &elements::GlobalEntry) -> elements::GlobalEntry {
+    elements::GlobalEntry::new(convert_gtype(a.global_type()), elements::InitExpr::new(a.init_expr().code().iter().map(|a| fpu_emu_opcode(m, a)).collect()))
+}
+
+fn fpu_emu_module(a : &elements::Module) -> elements::Module {
+    let m = a;
+    elements::Module::new(a.sections().iter().map(|a|
+       match a {
+           &elements::Section::Code(ref s) => elements::Section::Code(elements::CodeSection::with_bodies(s.bodies().iter().map(|a| fpu_emu_body(m, a)).collect())),
+           &elements::Section::Global(ref s) => elements::Section::Global(elements::GlobalSection::with_entries(s.entries().iter().map(|a| fpu_emu_global(m, a)).collect())),
+           s => s.clone()
+       }).collect())
+}
+
+
 // 
 fn main_offset() {
     let inc : u32 = 1024;
@@ -250,7 +294,7 @@ fn main() {
     let inc : u32 = 1024;
     let mut module = parity_wasm::deserialize_file("input.wasm").unwrap();
     let module2 = parity_wasm::deserialize_file("input.wasm").unwrap();
-    convert_module_types(&merge(&module, &module2, 123));
+    fpu_emu_module(&convert_module_types(&merge(&module, &module2, 123)));
     main_offset();
     assert!(module.code_section().is_some());
     {
