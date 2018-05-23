@@ -353,19 +353,7 @@ fn fpu_emu_module(a : &elements::Module) -> elements::Module {
 
 
 // 
-fn main_offset() {
-    let inc : u32 = 1024;
-    let mut module = parity_wasm::deserialize_file("input.wasm").unwrap();
-    assert!(module.code_section().is_some());
-    {
-        let code_section = module.code_section().unwrap(); // Part of the module with functions code
-
-        let data_section = module.data_section().unwrap();
-
-        println!("Function count in wasm file: {}", code_section.bodies().len());
-        println!("Segment count in wasm file: {}", data_section.entries().len());
-    }
-
+fn shift_offset(inc : u32, module : &mut elements::Module) {
     {
         
         for data_entry in module.data_section_mut().unwrap().entries_mut() {
@@ -383,15 +371,14 @@ fn main_offset() {
         
     }
 
-    parity_wasm::serialize_to_file("output.wasm", module).expect("Module serialization to succeed");
 }
 
 fn main() {
-    let inc : u32 = 1024;
+    let inc : u32 = 10240;
     let mut module = parity_wasm::deserialize_file("input.wasm").unwrap();
-    let module2 = parity_wasm::deserialize_file("input.wasm").unwrap();
-    fpu_emu_module(&convert_module_types(&merge(&module, &module2, 123)));
-    main_offset();
+    let module2 = parity_wasm::deserialize_file("softfloat.wasm").unwrap();
+    shift_offset(10240, &mut module);
+    fpu_emu_module(&convert_module_types(&merge(&module, &module2, inc)));
     assert!(module.code_section().is_some());
     {
         let code_section = module.code_section().unwrap(); // Part of the module with functions code
@@ -400,23 +387,6 @@ fn main() {
 
         println!("Function count in wasm file: {}", code_section.bodies().len());
         println!("Segment count in wasm file: {}", data_section.entries().len());
-    }
-
-    {
-        
-        for data_entry in module.data_section_mut().unwrap().entries_mut() {
-            *data_entry = elements::DataSegment::new(0, convert_init(inc, data_entry.offset()), data_entry.value().to_vec())
-        }
-        
-    }
-    
-    {
-        for ref mut f in module.code_section_mut().unwrap().bodies_mut() {
-            for op in f.code_mut().elements_mut() {
-               *op = convert_op(inc, op);
-            }
-        }
-        
     }
 
     parity_wasm::serialize_to_file("output.wasm", module).expect("Module serialization to succeed");
