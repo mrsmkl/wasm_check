@@ -154,7 +154,28 @@ fn convert_local(l : &elements::Local) -> elements::Local {
 // function body
 // !!! probably will need to work more on initializing floating point values
 fn convert_body(bd : &elements::FuncBody) -> elements::FuncBody {
-    elements::FuncBody::new(bd.locals().iter().map(|l| convert_local(l)).collect(), elements::Opcodes::new(bd.code().elements().iter().map(|a| convert_opcode(a)).collect()))
+    use elements::ValueType::*;
+    use elements::Opcode::*;
+    let mut v = Vec::new();
+    let mut acc = 0;
+    for i in bd.locals().iter() {
+        match &i.value_type() {
+            &F32 =>
+              for n in 0..i.count()-1 {
+                  v.push(I32Const(0.0_f32.to_bits() as i32));
+                  v.push(SetLocal(n+acc))
+              },
+            &F64 =>
+              for n in 0..i.count()-1 {
+                  v.push(I64Const(0.0_f64.to_bits() as i64));
+                  v.push(SetLocal(n+acc))
+              },
+            _ => {}
+        };
+        acc += i.count()
+    };
+    v.append(&mut bd.code().elements().iter().map(|a| convert_opcode(a)).collect());
+    elements::FuncBody::new(bd.locals().iter().map(|l| convert_local(l)).collect(), elements::Opcodes::new(v))
 }
 
 fn test_clear(a : &elements::Section) -> bool {
@@ -278,14 +299,14 @@ fn fpu_emu_opcode(m : &elements::Module, a : &elements::Opcode) -> elements::Opc
         &I32ReinterpretF32 => Nop,
         &I64ReinterpretF64 => Nop,
         
-	    &I32TruncSF32 => Call(find_function(m, "f32_to_i32")),
-	    &I32TruncUF32 => Call(find_function(m, "f32_to_ui32")),
-	    &I32TruncSF64 => Call(find_function(m, "f64_to_i32")),
-	    &I32TruncUF64 => Call(find_function(m, "f64_to_ui32")),
-  	    &I64TruncSF32 => Call(find_function(m, "f32_to_i64")),
-	    &I64TruncUF32 => Call(find_function(m, "f32_to_ui64")),
-	    &I64TruncSF64 => Call(find_function(m, "f64_to_i64")),
-	    &I64TruncUF64 => Call(find_function(m, "f64_to_ui64")),
+	    &I32TruncSF32 => Call(find_function(m, "f32_trunc_i32")),
+	    &I32TruncUF32 => Call(find_function(m, "f32_trunc_ui32")),
+	    &I32TruncSF64 => Call(find_function(m, "f64_trunc_i32")),
+	    &I32TruncUF64 => Call(find_function(m, "f64_trunc_ui32")),
+  	    &I64TruncSF32 => Call(find_function(m, "f32_trunc_i64")),
+	    &I64TruncUF32 => Call(find_function(m, "f32_trunc_ui64")),
+	    &I64TruncSF64 => Call(find_function(m, "f64_trunc_i64")),
+	    &I64TruncUF64 => Call(find_function(m, "f64_trunc_ui64")),
 	    &F32ConvertSI32 => Call(find_function(m, "i32_to_f32")),
 	    &F32ConvertUI32 => Call(find_function(m, "ui32_to_f32")),
 	    &F32ConvertSI64 => Call(find_function(m, "i64_to_f32")),
