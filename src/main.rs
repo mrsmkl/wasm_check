@@ -154,7 +154,7 @@ fn convert_local(l : &elements::Local) -> elements::Local {
 // function body
 // !!! probably will need to work more on initializing floating point values
 // how to find the number of parameters?
-fn convert_body(params : i32, bd : &elements::FuncBody) -> elements::FuncBody {
+fn convert_body(params : u32, bd : &elements::FuncBody) -> elements::FuncBody {
     use elements::ValueType::*;
     use elements::Opcode::*;
     let mut v = Vec::new();
@@ -191,8 +191,10 @@ fn clear_module(a : &elements::Module) -> elements::Module {
     elements::Module::new(a.sections().iter().filter(|a| test_clear(a)).map(|a| a.clone()).collect())
 }
 
-fn func_params(a : &elements::Module, num : i32) -> i32 {
-    0
+fn func_params(a : &elements::Module, num : usize) -> u32 {
+    let f = a.function_section().unwrap().entries()[num].type_ref();
+    let elements::Type::Function(ref ft) = a.type_section().unwrap().types()[f as usize];
+    ft.params().len() as u32
 }
 
 // all together
@@ -205,7 +207,7 @@ fn convert_module_types(a : &elements::Module) -> elements::Module {
     else { builder };
     let mut acc = 0;
     let builder = if let Some(gs) = a.code_section() {
-       gs.bodies().iter().fold(builder, |builder, g| { builder.with_func_body(convert_body(func_params(a, acc), g)); acc++ })
+       gs.bodies().iter().fold(builder, |builder, g| { let builder = builder.with_func_body(convert_body(func_params(a, acc), g)); acc += 1; builder })
     }
     else { builder };
     builder.build()
