@@ -51,7 +51,7 @@ RUN git clone https://github.com/mrsmkl/wasm_check \
  && cp softfloat.wasm _dev_urandom \
  && touch output.wasm
 
-EXPOSE 80 22448 4001
+RUN cd wasm_check/target/wasm32-unknown-emscripten/debug \
+ && source /emsdk/emsdk_env.sh \
+ && node /emscripten-module-wrapper/prepare.js wasm_check.js --analyze --memory-size=25 --run --asmjs --debug --out=stuff --file output.wasm --file input.wasm --file softfloat.wasm --file _dev_urandom
 
-# docker build . -t truebit-livepeer:latest
-# docker run -it -p 8080:80 -p 4001:4001 -p 22448:22448 truebit-livepeer:latest /bin/bash
