@@ -5,5 +5,5 @@ authors = ["Sami Mäkelä <mrsmkl@gmail.com>"]
 
 [dependencies]
 # parity-wasm = "0.29"
-parity-wasm = { path = "/home/sami/parity-wasm" }
+parity-wasm = { path = "../parity-wasm" }
 
